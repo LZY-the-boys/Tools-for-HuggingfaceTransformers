@@ -1,5 +1,5 @@
 # Tools-for-HuggingfaceTransformers
-|[English](https://github.com/LZY-the-boys/Tools-for-HuggingfaceTransformers/blob/master/README.md) | [中文](https://github.com/LZY-the-boys/Tools-for-HuggingfaceTransformers/blob/master/README-zh.md) |
+|[English](https://github.com/LZY-the-boys/Tools-for-HuggingfaceTransformers/blob/main/README.md) | [中文](https://github.com/LZY-the-boys/Tools-for-HuggingfaceTransformers/blob/main/README-zh.md) |
 
 关于 huggingface [transformers](https://github.com/huggingface/transformers) 库的一些魔改
 
