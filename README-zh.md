@@ -13,6 +13,6 @@ https://user-images.githubusercontent.com/72137647/229296303-33fd239e-752a-4491-
 
 ## Notes
 
-- huggingface transformers Trainer `report_to` is badly designed, you need to set `report_to=[]` in trainer args to avoid the automatically `wandb`; this "feature" will be removed in transformers>=5.0
-
+- huggingface transformers Trainer 的`report_to` 参数有一点要注意, `report_to=[]` 才能真正disable `wandb`, 而不是None; (this "feature" will be removed in transformers>=5.0)
+- 关于bert的阅读笔记 [notes](https://github.com/LZY-the-boys/Tools-for-HuggingfaceTransformers/blob/main/Notes/bert.md)
 - `peft-v0.3.0` 关于`lora`的源码阅读[笔记](https://github.com/LZY-the-boys/Tools-for-HuggingfaceTransformers/blob/main/Notes/peft-v0.3.0.md)

@@ -139,6 +139,53 @@ torch.Size([12, 12, 3])
     基于`BertOnlyNSPHead`，内容就是一个线性层
 
 - `BertForSequenceClassification` 分类任务，比如GLUE benchmark的各个任务 句子分类的输入为句子（对），输出为单个分类标签。
+    ```
+    BertForSequenceClassification(
+        (bert): BertModel(
+        (embeddings): BertEmbeddings(
+            (word_embeddings): Embedding(21128, 768, padding_idx=0)
+            (position_embeddings): Embedding(512, 768)
+            (token_type_embeddings): Embedding(2, 768)
+            (LayerNorm): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+            (dropout): Dropout(p=0.1, inplace=False)
+        )
+        (encoder): BertEncoder_pagerank(
+            (layer): ModuleList(
+            (0-11): BertLayer(
+                (attention): BertAttention(
+                (self): BertSelfAttention(
+                    (query): Linear(in_features=768, out_features=768, bias=True)
+                    (key): Linear(in_features=768, out_features=768, bias=True)
+                    (value): Linear(in_features=768, out_features=768, bias=True)
+                    (dropout): Dropout(p=0.1, inplace=False)
+                )
+                (output): BertSelfOutput(
+                    (dense): Linear(in_features=768, out_features=768, bias=True)
+                    (LayerNorm): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+                    (dropout): Dropout(p=0.1, inplace=False)
+                )
+                )
+                (intermediate): BertIntermediate(
+                (dense): Linear(in_features=768, out_features=3072, bias=True)
+                (intermediate_act_fn): GELUActivation()
+                )
+                (output): BertOutput(
+                (dense): Linear(in_features=3072, out_features=768, bias=True)
+                (LayerNorm): LayerNorm((768,), eps=1e-12, elementwise_affine=True)
+                (dropout): Dropout(p=0.1, inplace=False)
+                )
+            )
+            )
+        )
+        (pooler): BertPooler(
+            (dense): Linear(in_features=768, out_features=768, bias=True)
+            (activation): Tanh()
+        )
+        )
+        (dropout): Dropout(p=0.1, inplace=False)
+        (classifier): Linear(in_features=768, out_features=2, bias=True)
+    )
+    ```
 - `BertForMultipleChoice` 用于多项选择，如RocStories/SWAG任务 多项选择任务的输入为一组分次输入的句子，输出为选择某一句子的单个标签
 - `BertForTokenClassification` 序列标注（词分类），如NER任务。输入为单个句子文本，输出为每个token对应的类别标签。
 - `BertForQuestionAnswering` 解决问答任务，例如SQuAD任务 
@@ -203,7 +250,7 @@ torch.Size([12, 12, 3])
     ```
 
 
-代码逻辑
+## 使用逻辑
 
 - 在2023前，做NLU经常用BERT，但是做NLG以及做seq2seq的一般是GPT2和T5
 - 训练的时候Decoder端的self-att和cross-att都是直接一遍过的 只有casual mask保证auto-regressive。
