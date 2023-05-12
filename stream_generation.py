@@ -27,10 +27,10 @@ from transformers.generation.utils import (
 )
 from torch import nn
 from transformers import  GenerationConfig
+import warnings
 
+class StreamGenerationMixin(GenerationMixin):
 
-class SteamGenerationMixin(GenerationMixin):
-    # support for streamly generation
     @torch.no_grad()
     def stream_generate(
         self,
@@ -181,7 +181,7 @@ class SteamGenerationMixin(GenerationMixin):
 
         if is_greedy_gen_mode:
             # 11. run greedy search
-            return self.greedy_search(
+            return self.stream_greedy_search(
                 input_ids,
                 logits_processor,
                 stopping_criteria,
@@ -197,7 +197,7 @@ class SteamGenerationMixin(GenerationMixin):
                 is_encoder_decoder=self.config.is_encoder_decoder,
                 **model_kwargs,
             )
-            return self.sample(
+            return self.stream_sample(
                 generation_config,
                 input_ids,
                 logits_processor,
@@ -207,7 +207,7 @@ class SteamGenerationMixin(GenerationMixin):
                 **model_kwargs,
             )
         elif is_beam_gen_mode:
-            return self.beam_search(
+            return self.stream_beam_search(
                 generation_config,
                 input_ids,
                 logits_processor,
@@ -217,7 +217,7 @@ class SteamGenerationMixin(GenerationMixin):
             )
         elif is_beam_sample_gen_mode:
             # interleave input_ids with `num_beams` additional sequences per batch
-            return self.beam_sample(
+            return self.stream_beam_sample(
                 input_ids,
                 logits_processor,
                 logits_warper,
@@ -229,7 +229,7 @@ class SteamGenerationMixin(GenerationMixin):
         else:
             raise Exception('not implement')
         
-    def sample(
+    def stream_sample(
         self,
         generation_config,
         input_ids,
@@ -306,7 +306,7 @@ class SteamGenerationMixin(GenerationMixin):
                     this_peer_finished = True
         yield input_ids
 
-    def beam_sample(
+    def stream_beam_sample(
         self,
         input_ids,
         logits_processor,
@@ -441,7 +441,7 @@ class SteamGenerationMixin(GenerationMixin):
         )
         yield sequence_outputs["sequences"]
 
-    def greedy_search(
+    def stream_greedy_search(
         self,
         input_ids,
         logits_processor,
@@ -516,7 +516,7 @@ class SteamGenerationMixin(GenerationMixin):
                     this_peer_finished = True
         yield input_ids
 
-    def beam_search(
+    def stream_beam_search(
         self,
         generation_config,
         input_ids,
@@ -525,6 +525,7 @@ class SteamGenerationMixin(GenerationMixin):
         synced_gpus,
         **model_kwargs,
     ):
+
         # 10. go into beam search generation modes
         # 11. prepare beam search scorer
         bos_token_id, eos_token_id, pad_token_id = (
@@ -565,6 +566,7 @@ class SteamGenerationMixin(GenerationMixin):
         beam_scores = beam_scores.view((batch_size * num_beams,))
         this_peer_finished = False  # used by synced_gpus only
         while True:
+
             if synced_gpus:
                 # Under synced_gpus the `forward` call must continue until all gpus complete their sequence.
                 # The following logic allows an early break if all peers finished generating their sequence
@@ -658,3 +660,139 @@ class SteamGenerationMixin(GenerationMixin):
             beam_indices=None,
         )
         yield final_result["sequences"]
+
+from transformers import LlamaForCausalLM
+class StreamLlamaForCausalLM(LlamaForCausalLM, StreamGenerationMixin):
+    pass
+
+from peft import PeftModelForCausalLM
+class StreamPeftGenerationMixin(PeftModelForCausalLM, StreamGenerationMixin):
+
+    # default it call `model = MODEL_TYPE_TO_PEFT_MODEL_MAPPING[config.task_type](model, config)`, not cls!! so inherent PeftModelForCausalLM is non sense
+    @classmethod
+    def from_pretrained(cls, model, model_id, adapter_name="default", is_trainable=False,  **kwargs):
+        # work in peft==0.3.0
+        # load the config
+        from peft.utils import PromptLearningConfig
+        config = LoraConfig.from_pretrained(model_id)
+
+        if (getattr(model, "hf_device_map", None) is not None) and len(
+            set(model.hf_device_map.values()).intersection({"cpu", "disk"})
+        ) > 0:
+            remove_hook_from_submodules(model)
+
+        if isinstance(config, PromptLearningConfig) and is_trainable:
+            raise ValueError("Cannot set a prompt learning adapter to trainable when loading pretrained adapter.")
+        else:
+            config.inference_mode = not is_trainable
+
+        # here is the hack
+        model = cls(model, config, adapter_name)
+        model.load_adapter(model_id, adapter_name, **kwargs)
+        model.base_model_prepare_inputs_for_generation = model.base_model.prepare_inputs_for_generation
+        return model
+
+
+    @classmethod
+    def from_pretrained_old_peft_version(cls, model, model_id, **kwargs):
+        # work well in peft@e536616888d51b453ed354a6f1e243fecb02ea08 (<0.3.0.dev)
+        # load the config
+        config = LoraConfig.from_pretrained(model_id)
+
+        if getattr(model, "hf_device_map", None) is not None:
+            remove_hook_from_submodules(model)
+
+        # here is the hack
+        model = cls(model, config)
+        model._reorder_cache = model.base_model._reorder_cache
+        # load weights if any
+        if os.path.exists(os.path.join(model_id, "adapter_model.bin")):
+            filename = os.path.join(model_id, "adapter_model.bin")
+        else:
+            try:
+                filename = hf_hub_download(model_id, "adapter_model.bin")
+            except:  # noqa
+                raise ValueError(
+                    f"Can't find weights for {model_id} in {model_id} or in the Hugging Face Hub. "
+                    f"Please check that the file {'adapter_model.bin'} is present at {model_id}."
+                )
+
+        adapters_weights = torch.load(
+            filename,
+            map_location=torch.device("cuda" if torch.cuda.is_available() else "cpu"),
+        )
+        # load the weights into the model
+        model = set_peft_model_state_dict(model, adapters_weights)
+        if getattr(model, "hf_device_map", None) is not None:
+            device_map = kwargs.get("device_map", "auto")
+            max_memory = kwargs.get("max_memory", None)
+            no_split_module_classes = model._no_split_modules
+            if device_map != "sequential":
+                max_memory = get_balanced_memory(
+                    model,
+                    max_memory=max_memory,
+                    no_split_module_classes=no_split_module_classes,
+                    low_zero=(device_map == "balanced_low_0"),
+                )
+            if isinstance(device_map, str):
+                device_map = infer_auto_device_map(
+                    model,
+                    max_memory=max_memory,
+                    no_split_module_classes=no_split_module_classes,
+                )
+            model = dispatch_model(model, device_map=device_map)
+            hook = AlignDevicesHook(io_same_device=True)
+            if model.peft_config.peft_type == PeftType.LORA:
+                add_hook_to_module(model.base_model.model, hook)
+            else:
+                remove_hook_from_submodules(model.prompt_encoder)
+                add_hook_to_module(model.base_model, hook)
+        return model
+
+def llama_example(model_path='yahma/llama-7b-hf'):
+    from transformers import LlamaTokenizer
+    tokenizer = LlamaTokenizer.from_pretrained(model_path)
+    model = StreamLlamaForCausalLM.from_pretrained(
+        model_path,
+        load_in_8bit=True,
+        torch_dtype=torch.float16,
+        device_map={"": 0},
+    )  
+    model.eval()
+    if torch.__version__ >= "2" and sys.platform != "win32":
+        model = torch.compile(model)
+
+    input_text = 'what is llama?'
+    input_ids = tokenizer(input_text, return_tensors='pt')['input_ids']
+
+    for generation_output in model.stream_generate(
+        input_ids=input_ids,
+        return_dict_in_generate=True,
+    ):
+        gen_token = generation_output[0][-1].item()
+        print(gen_token, end='(')
+        print(tokenizer.decode(gen_token), end=') ')
+
+def llama_peft_example(lora_path,model_path='yahma/llama-7b-hf'):
+    model = LlamaForCausalLM.from_pretrained(
+        model_path, device_map={"": 0}, low_cpu_mem_usage=True
+    )
+    model = StreamPeftGenerationMixin.from_pretrained(
+        model,
+        lora_path,
+        device_map={"": 0},
+    )  
+    model.eval()
+    if torch.__version__ >= "2" and sys.platform != "win32":
+        model = torch.compile(model)
+
+    input_text = 'what is llama?'
+    input_ids = tokenizer(input_text, return_tensors='pt')['input_ids']
+
+    for generation_output in model.stream_generate(
+        input_ids=input_ids,
+        return_dict_in_generate=True,
+    ):
+        gen_token = generation_output[0][-1].item()
+        print(gen_token, end='(')
+        print(tokenizer.decode(gen_token), end=') ')

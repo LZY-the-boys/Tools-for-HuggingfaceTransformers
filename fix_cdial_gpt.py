@@ -6,7 +6,6 @@ import torch
 # from transformers.models.gpt2.modeling_gpt2 import *
 import math
 
-
 # 这是为了加载flash attention优化修改的
 class CustomAttention(Attention):
     
