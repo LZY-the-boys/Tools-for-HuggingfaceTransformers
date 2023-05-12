@@ -151,6 +151,8 @@ torch.Size([12, 12, 3])
     基于`BertOnlyNSPHead`，内容就是一个线性层
 
 - `BertForSequenceClassification` 分类任务，比如GLUE benchmark的各个任务 句子分类的输入为句子（对），输出为单个分类标签。
+![image](https://github.com/LZY-the-boys/Tools-for-HuggingfaceTransformers/assets/72137647/0120347c-3032-4ab6-af81-c8913f627fae)
+
     ```
     BertForSequenceClassification(
         (bert): BertModel(
@@ -201,7 +203,8 @@ torch.Size([12, 12, 3])
 - `BertForMultipleChoice` 用于多项选择，如RocStories/SWAG任务 多项选择任务的输入为一组分次输入的句子，输出为选择某一句子的单个标签
 - `BertForTokenClassification` 序列标注（词分类），如NER任务。输入为单个句子文本，输出为每个token对应的类别标签。
 - `BertForQuestionAnswering` 解决问答任务，例如SQuAD任务 
-
+![image](https://github.com/LZY-the-boys/Tools-for-HuggingfaceTransformers/assets/72137647/68915fdf-2edd-416a-8ca0-4bad6d64f37a)
+    
     ```
     BertForQuestionAnswering(
         (bert): BertModel(
