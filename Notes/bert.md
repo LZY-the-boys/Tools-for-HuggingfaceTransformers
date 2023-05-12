@@ -15,7 +15,7 @@ hugginface transformers BERT源码阅读
 和BERT有关的Tokenizer主要写在`tokenization_bert.py`和`tokenization_bert_fast.py` 中 这两份代码分别对应基本的`BertTokenizer`，以及不进行token到index映射的`BertTokenizerFast` 
 
 - truncation截断逻辑 (`truncation=True`)： 将句子截断为`max_length-2` 因为要添加[cls]和[sep]
-- pad填充逻辑：向右或者向左，向左一般是inference的时候避免输入部分和待生成部分被pad分开
+- pad填充逻辑：向右或者向左，向左一般是inference的时候避免输入部分和待生成部分被pad分开; bert类的模型是通过将`attention_mask`对应设成0实现，而gpt类的casual model还将`labels`设成-100
 - tokenize逻辑：
     - `BasicTokenizer`: 按空格分割句子，并处理是否统一小写，以及清理非法字符。
     对于中文字符，通过预处理（加空格）来按字分割
@@ -27,6 +27,9 @@ hugginface transformers BERT源码阅读
         - WordPiece算法(Bert)：基于概率生成新的subword
         - ULM算法 和WordPiece一样是基于语言模型的，引入了一个假设：所有subword的出现都是独立的，并且subword序列由subword出现概率的乘积产生
     - `BertTokenizerFast` 更快，因为使用了 基于 RUST的[tokenizer](https://github.com/huggingface/tokenizers) 库，所以多线程更好
+
+![image](https://github.com/LZY-the-boys/Tools-for-HuggingfaceTransformers/assets/72137647/85591260-1f06-46bf-9e7c-c234922707d9)
+
 
 ### sec2. model
 
@@ -52,6 +55,10 @@ Model本体写在 `modeling_bert.py`
     - **token_type_embeddings**[段嵌入]，区分不同句子
     - **position_embeddings**，句子中每个词的位置嵌入，用于区别词的顺序。和transformer论文中的设计不同，这一块是训练出来的，而不是通过Sinusoidal函数计算得到的固定嵌入。一般认为这种实现不利于拓展性 https://github.com/google-research/bert/issues/58
     - 三个embedding不带权重相加，并通过一层LayerNorm+dropout后输出 [为什么用layerNorm](https://www.zhihu.com/question/395811291/answer/1260290120)
+
+![image](https://github.com/LZY-the-boys/Tools-for-HuggingfaceTransformers/assets/72137647/8d12bf25-2633-489d-8640-5bb089efc9e8)
+
+
 
 ```python
 >>> embedding = nn.Embedding(10, 3) # 输入是token对应词嵌入的idx
@@ -84,13 +91,18 @@ tensor([[11, 10,  9,  8,  7,  6,  5,  4,  3,  2,  1,  0],
 >>> embedding(input).size() # 把每个数(idx)换成对应的emb[idx]=3d-vector
 torch.Size([12, 12, 3])
 ```
-  ​      
+![image](https://github.com/LZY-the-boys/Tools-for-HuggingfaceTransformers/assets/72137647/1ffe4c1e-2f9b-4626-92c9-f7672e5b2701)
+
 - `BertSelfAttention`
 
     - `prune_heads`: 剪枝操作
 
     - 这些注意力头，众所周知是并行计算的，所以上面的query、key、value三个权重是唯一的，所有heads是“拼接”起来。(12个头，768分为12个部分，每部分的矩阵768\*64，因为后面是拼接操作，所以可以直接用一个768\*768的矩阵实现 这样一个矩阵就实现了多头运算)
 
+![image](https://github.com/LZY-the-boys/Tools-for-HuggingfaceTransformers/assets/72137647/6b5ab533-6815-4c64-b153-550ac558aad7)
+
+    - 注意mask操作，`attention_mask` 是相加， `head_mask`是相乘
+![image](https://github.com/LZY-the-boys/Tools-for-HuggingfaceTransformers/assets/72137647/a7c264f9-3000-4a82-8a80-b62ea4786f37)
 
 - FFN
 
